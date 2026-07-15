@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+# Default parent directory (using $HOME to safely expand the tilde ~)
+DEFAULT_PATH="$HOME/.Garmin/ConnectIQ/Sdks"
+BASE_DIR="${1:-$DEFAULT_PATH}"
+
+# Manually expand tilde in case the user passed a literal "~" in the argument
+BASE_DIR="${BASE_DIR/#\~/$HOME}"
+
+# Check if the base directory exists
+if [ ! -d "$BASE_DIR" ]; then
+    echo "Error: Base directory '$BASE_DIR' does not exist." >&2
+    exit 1
+fi
+
+echo "Scanning ConnectIQ SDKs in: $BASE_DIR"
+echo "=================================================="
+
+# Track if we found any missing dependencies at all
+found_issues=0
+
+# Loop through each SDK folder in the base directory
+for sdk_path in "$BASE_DIR"/*; do
+    # Ensure it's actually a directory
+    if [ -d "$sdk_path" ]; then
+        sdk_name=$(basename "$sdk_path")
+        bin_dir="$sdk_path/bin"
+
+        # Check if this SDK has a 'bin' directory
+        if [ -d "$bin_dir" ]; then
+            echo "Inspecting SDK: $sdk_name..."
+            sdk_has_issue=0
+
+            # Loop through files inside the bin folder
+            for file in "$bin_dir"/*; do
+                if [ -f "$file" ] && [ -x "$file" ]; then
+                    missing=$(ldd "$file" 2>/dev/null | grep "not found")
+
+                    if [ -n "$missing" ]; then
+                        # Print the SDK header only once if an issue is found
+                        if [ $sdk_has_issue -eq 0 ]; then
+                            echo "  ⚠️  Issues found in bin/ folder:"
+                            sdk_has_issue=1
+                            found_issues=1
+                        fi
+                        echo "    📄 $(basename "$file")"
+                        # Indent the missing library output for readability
+                        echo "$missing" | sed 's/^/      /'
+                    fi
+                fi
+            done
+
+            if [ $sdk_has_issue -eq 0 ]; then
+                echo "  ✅ No missing dependencies."
+            fi
+            echo "--------------------------------------------------"
+        fi
+    fi
+done
+
+if [ $found_issues -eq 0 ]; then
+    echo "🎉 All clean! No missing dependencies found in any SDK."
+fi
